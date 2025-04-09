@@ -7,6 +7,7 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.preprocessing import StandardScaler
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import fcluster, linkage
+from sklearn.metrics import silhouette_score
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -19,6 +20,7 @@ class SpeakerDiarizer:
         self.frame_shift = 0.01  # 10ms
         self.segments = []
         self.labels = []
+        self.num_speakers = 0
         
     def preprocess_audio(self):
         """Load and preprocess the audio file"""
@@ -96,55 +98,37 @@ class SpeakerDiarizer:
         print(f"Number of segments: {len(self.segments)}")
         
     def find_optimal_num_speakers(self):
-        """Find optimal number of speakers using BIC"""
+        """Find optimal number of speakers using BIC or Silhouette score"""
         print("Finding optimal number of speakers...")
-        
+
         # Calculate distance matrix
         distance_matrix = squareform(pdist(self.segments, metric='euclidean'))
         
         # Compute linkage
         Z = linkage(distance_matrix, method='ward')
         
-        # Calculate BIC for different numbers of clusters
+        # Calculate BIC and Silhouette scores for different numbers of clusters
         bic_scores = []
+        silhouette_scores = []
         
         for k in range(self.min_speakers, self.max_speakers + 1):
             clusters = fcluster(Z, k, criterion='maxclust')
-            bic = self._calculate_bic(clusters)
-            bic_scores.append(bic)
-            print(f"Number of speakers: {k}, BIC: {bic:.2f}")
+            # Use silhouette score to measure cluster validity
+            sil_score = silhouette_score(self.segments, clusters)
+            silhouette_scores.append(sil_score)
+            print(f"Number of speakers: {k}, Silhouette Score: {sil_score:.2f}")
         
-        # Find optimal number of speakers
-        self.num_speakers = np.argmin(bic_scores) + self.min_speakers
+        # Select number of speakers based on the highest silhouette score
+        self.num_speakers = np.argmax(silhouette_scores) + self.min_speakers
         print(f"Optimal number of speakers: {self.num_speakers}")
         
         return self.num_speakers
     
-    def _calculate_bic(self, clusters):
-        """Calculate BIC for a given clustering"""
-        n_clusters = len(np.unique(clusters))
-        n_features = self.segments.shape[1]
-        n_samples = self.segments.shape[0]
-        
-        # Calculate within-cluster dispersion
-        wcd = 0
-        for i in range(1, n_clusters + 1):
-            cluster_samples = self.segments[clusters == i]
-            if len(cluster_samples) > 1:
-                cluster_mean = np.mean(cluster_samples, axis=0)
-                wcd += np.sum((cluster_samples - cluster_mean) ** 2)
-        
-        # Calculate BIC
-        bic = wcd + np.log(n_samples) * (n_clusters * n_features)
-        
-        return bic
-        
     def cluster_segments(self):
         """Cluster segments using agglomerative clustering"""
         print("Clustering segments...")
         
         # Apply agglomerative clustering
-        # Updated to use metric instead of affinity
         clustering = AgglomerativeClustering(
             n_clusters=self.num_speakers,
             metric='euclidean',  # Changed from 'affinity'
@@ -153,8 +137,7 @@ class SpeakerDiarizer:
         
         self.labels = clustering.fit_predict(self.segments)
         
-        # Detect potential overlapping speech (simplified approach)
-        # Here we check if consecutive segments have abrupt speaker changes
+        # Detect potential overlapping speech
         self.overlaps = []
         for i in range(1, len(self.labels)):
             if self.labels[i] != self.labels[i-1]:
@@ -163,7 +146,6 @@ class SpeakerDiarizer:
                 overlap_end = self.segment_times[i][0] + 0.25      # 250ms after start of current segment
                 self.overlaps.append((overlap_start, overlap_end, [self.labels[i-1], self.labels[i]]))
     
-        
         print(f"Found {len(self.overlaps)} potential overlapping regions")
         
     def refine_diarization(self):
@@ -259,7 +241,6 @@ class SpeakerDiarizer:
             'overlaps': self.overlaps
         }
 
-
 # Usage example
 if __name__ == "__main__":
     import sys
@@ -267,7 +248,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         audio_file = sys.argv[1]
     else:
-        audio_file = "C:\\Users\\Sai Sreya\\Downloads\\kkhh.mp3"  # Default audio file
+        audio_file = "D:\\Soy\\New folder\\kkhh_testaudio.mp3"
         
     print(f"Processing file: {audio_file}")
     
