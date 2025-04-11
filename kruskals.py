@@ -1,123 +1,99 @@
 import numpy as np
 import librosa
-import librosa.display
-import networkx as nx
+# import librosa.display
 import matplotlib.pyplot as plt
-from datasets import load_dataset
 from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import NearestNeighbors
-from sklearn.cluster import AgglomerativeClustering
-from scipy.spatial.distance import pdist, squareform
-from IPython.display import Audio
+import networkx as nx
+from scipy.spatial.distance import euclidean
+from scipy.spatial import KDTree
 
-# ✅ Load One Full Audio Sample
-print("Loading one full audio sample...")
-dataset = load_dataset("talkbank/callhome", "eng", split="data", streaming=True)
-audio_sample = next(iter(dataset))["audio"]
-y, sr = audio_sample["array"], audio_sample["sampling_rate"]
+# Load audio file
+file_path = "k3g_testaudio.mp3"
+y, sr = librosa.load(file_path, sr=None)
 
-# Display audio sample
-print(f"✅ Audio Sample Loaded (Duration: {len(y) / sr:.2f} sec)")
-display(Audio(data=y, rate=sr))
+# Define frame parameters
+frame_length = int(sr * 0.025)
+hop_length = int(sr * 0.010)
 
-# ✅ Plot Audio Waveform
-plt.figure(figsize=(10, 4))
-librosa.display.waveshow(y, sr=sr)
-plt.title("Audio Waveform")
-plt.xlabel("Time (s)")
-plt.ylabel("Amplitude")
-plt.show()
-
-# ✅ Frame Segmentation with Increased Hop Length
-frame_length = int(sr * 0.025)  # 25ms
-hop_length = int(sr * 0.050)  # Increased to 50ms
-
+# Function to segment audio into frames
 def frame_audio(signal, frame_length, hop_length):
     return librosa.util.frame(signal, frame_length=frame_length, hop_length=hop_length).T
 
+# Segment the audio into frames
 frames = frame_audio(y, frame_length, hop_length)
 
-# ✅ Compute Energy and Zero-Crossing Rate
+# Compute Energy
 energy = np.sum(frames ** 2, axis=1)
+
+# Compute Zero-Crossing Rate (ZCR)
 zcr = np.sum(np.abs(np.diff(np.sign(frames), axis=1)), axis=1)
 
-# ✅ Speech/Silence Classification
-energy_threshold = np.percentile(energy, 60)
-zcr_threshold = np.percentile(zcr, 60)
-speech_indices = np.where((energy > energy_threshold) & (zcr > zcr_threshold))[0]
+# Set classification thresholds
+energy_threshold = np.percentile(energy, 70)
+zcr_threshold = np.percentile(zcr, 70)
 
-# ✅ Extract and Normalize MFCC Features
-mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13, hop_length=hop_length).T
-mfccs = mfccs[speech_indices]
+# Select speech frames
+speech_frames = frames[(energy > energy_threshold) & (zcr > zcr_threshold)]
 
-# ✅ Downsample MFCCs (Avoid Too Many Small Segments)
-def downsample_features(features, factor=5):
-    return np.array([np.mean(features[i : i + factor], axis=0) for i in range(0, len(features) - factor, factor)])
+# Limit the number of speech frames to avoid high memory usage
+max_speech_frames = 500
+speech_frames = speech_frames[:max_speech_frames]
 
-mfccs = downsample_features(mfccs, factor=5)
+# Reconstruct the speech signal from selected frames
+speech_signal = speech_frames.flatten()
+
+# Extract MFCC features (Reduced number from 13 → 10 for efficiency)
+mfccs = librosa.feature.mfcc(y=speech_signal, sr=sr, n_mfcc=10, hop_length=hop_length).T
+
+# Normalize features
 scaler = StandardScaler()
 mfccs = scaler.fit_transform(mfccs)
 
-# ✅ Construct Similarity Graph Using KNN
+# Create graph and build MST
 G = nx.Graph()
 n_segments = len(mfccs)
-k = 7  # Moderate K to avoid over-fragmentation
-knn = NearestNeighbors(n_neighbors=k, metric='euclidean')
-knn.fit(mfccs)
-distances, indices = knn.kneighbors(mfccs)
+G.add_nodes_from(range(n_segments))
 
-# ✅ Add Edges Based on KNN
+# Use KDTree for fast neighbor search
+k = 5
+tree = KDTree(mfccs)
+_, indices = tree.query(mfccs, k=k + 1)  # +1 for self
+
 for i in range(n_segments):
-    for j in indices[i]:
-        if i != j:
-            dist = distances[i][np.where(indices[i] == j)[0][0]]
-            G.add_edge(i, j, weight=dist)
+    for j in indices[i][1:]:  # Skip self
+        dist = euclidean(mfccs[i], mfccs[j])
+        G.add_edge(i, j, weight=dist)
 
-# ✅ Compute Minimum Spanning Tree (MST)
+# Compute MST
 mst = nx.minimum_spanning_tree(G)
 
-# ✅ Agglomerative Clustering (Fix Distance Threshold)
-dist_matrix = squareform(pdist(mfccs, metric='euclidean'))
-clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=5.0, linkage='ward')  # Increased threshold
-speaker_labels = clustering.fit_predict(dist_matrix)
+# Extract connected components as clusters
+clusters = nx.connected_components(mst)
+speaker_segments = {i: list(cluster) for i, cluster in enumerate(clusters)}
 
-# ✅ Fix Over-Segmentation in Speaker Timeline
+# Generate speaker diarization timeline
 speaker_timeline = {}
-for i, speaker in enumerate(speaker_labels):
-    start_time = speech_indices[i] * hop_length / sr
-    end_time = (speech_indices[i] + 1) * hop_length / sr
-    if speaker not in speaker_timeline:
-        speaker_timeline[speaker] = []
-    speaker_timeline[speaker].append((start_time, end_time))
+for speaker, segments in speaker_segments.items():
+    start_times = [s * hop_length / sr for s in segments]
+    end_times = [(s + 1) * hop_length / sr for s in segments]
+    speaker_timeline[speaker] = list(zip(start_times, end_times))
 
-# ✅ Merge Consecutive Speaker Segments
-merged_timeline = {}
+# Print results
+print("\nSpeaker Diarization Results:")
 for speaker, times in speaker_timeline.items():
-    times.sort()
-    merged = [times[0]]
-    for curr_start, curr_end in times[1:]:
-        prev_start, prev_end = merged[-1]
-        if curr_start - prev_end <= 0.5:  # Merge segments within 500ms
-            merged[-1] = (prev_start, curr_end)
-        else:
-            merged.append((curr_start, curr_end))
-    merged_timeline[speaker] = merged
+    print(f"🗣️ Speaker {speaker}: {times}")
 
-# ✅ Display Speaker Diarization Results
-# print("\n✅ Speaker Diarization Results:")
-# for speaker, times in merged_timeline.items():
-#     print(f"🗣️ Speaker {speaker}: {times}")
-
-print(f"\n🔍 Total Speakers Detected: {len(merged_timeline)}")  # Should be realistic (~2-5 speakers)
-
-# ✅ Plot Speaker Timeline
+# Plot the timeline
 plt.figure(figsize=(10, 4))
-for speaker, times in merged_timeline.items():
+for speaker, times in speaker_timeline.items():
     for (start, end) in times:
-        plt.plot([start, end], [speaker, speaker], marker='o', markersize=4)
+        plt.plot([start, end], [speaker, speaker], marker='o', markersize=4,
+                 label=f'Speaker {speaker}' if start == times[0][0] else "")
 
 plt.xlabel("Time (seconds)")
 plt.ylabel("Speakers")
 plt.title("Speaker Diarization Timeline")
 plt.legend()
 plt.show()
+
+print(f"\nTotal Speakers Detected: {len(speaker_timeline)}")
