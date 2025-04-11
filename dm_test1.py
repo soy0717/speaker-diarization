@@ -241,14 +241,13 @@ class SpeakerDiarizer:
             'overlaps': self.overlaps
         }
 
-# Usage example
 if __name__ == "__main__":
     import sys
     
     if len(sys.argv) > 1:
         audio_file = sys.argv[1]
     else:
-        audio_file = "k3g_testaudio.mp3"  # Default audio file
+        audio_file = "k3g_testaudio.mp3" 
         
     print(f"Processing file: {audio_file}")
     
