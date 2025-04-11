@@ -415,7 +415,7 @@ def perform_diarization(audio_path, num_speakers=None):
 # Example usage
 if __name__ == "__main__":
     # Replace with your audio file path
-    audio_file = "kkhh_testaudio.mp3"
+    audio_file = "k3g_testaudio.mp3"
 
     try:
         # Perform diarization
