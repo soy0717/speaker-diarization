@@ -412,16 +412,12 @@ def perform_diarization(audio_path, num_speakers=None):
 
     return diarization_result, analysis
 
-# Example usage
 if __name__ == "__main__":
-    # Replace with your audio file path
     audio_file = "k3g_testaudio.mp3"
 
     try:
-        # Perform diarization
         results, analysis = perform_diarization(audio_file, num_speakers=None)
 
-        # Print analysis results
         print("\nDiarization Analysis:")
         print(f"Total audio duration: {analysis['total_duration']:.2f} seconds")
         print(f"Number of speakers detected: {analysis['num_speakers']}")
@@ -434,7 +430,6 @@ if __name__ == "__main__":
             percentage = analysis['speaker_percentages'][speaker]
             print(f"{speaker}: {time:.2f}s ({percentage:.1f}%)")
 
-        # Visualize the diarization results
         visualize_diarization(results, analysis['total_duration'], analysis['num_speakers'])
 
     except Exception as e:
