@@ -646,7 +646,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         audio_file = sys.argv[1]
     else:
-        audio_file = 'D:\\Soy\\New folder\\kkhh_testaudio.mp3'
+        audio_file = 'k3g_testaudio.mp3'
         
     print(f"Processing file: {audio_file}")
     
