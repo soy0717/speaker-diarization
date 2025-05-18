@@ -13,8 +13,8 @@ This project explores and evaluates **four distinct speaker diarization pipeline
 
 ## Team members:
 
-23011101092 - [@PavithraRajindra](https://github.com/PavithraRajindra)
+Pavithra Rajindra - [@PavithraRajindra](https://github.com/PavithraRajindra)
 
-23011101105 - [@soy0717](https://github.com/soy0717)
+Sai Sreya - [@soy0717](https://github.com/soy0717)
 
-23011101130 - [@Sanjanaa-S](https://github.com/Sanjanaa-S)
+Sanjana - [@Sanjanaa-S](https://github.com/Sanjanaa-S)
